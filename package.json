@@ -1,0 +1,34 @@
+{
+  "name": "@ampersend/hermes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "ampersend-hermes-bootstrap": "./dist/bootstrap-cli.js",
+    "ampersend-hermes-setup": "./dist/setup.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "bootstrap": "tsx src/bootstrap-cli.ts",
+    "bootstrap:start": "tsx src/bootstrap-cli.ts start",
+    "bootstrap:finish": "tsx src/bootstrap-cli.ts finish",
+    "setup": "tsx src/setup.ts",
+    "proxy": "tsx src/mcp/proxy-cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@ampersend_ai/ampersend-sdk": "^0.0.16",
+    "yaml": "^2.6.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0",
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
