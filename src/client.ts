@@ -5,13 +5,16 @@ import {
 } from "@ampersend_ai/ampersend-sdk/ampersend";
 import {
   createAmpersendTreasurer,
+  createAmpersendHttpClient,
   type X402Treasurer,
   type AmpersendTreasurerConfig,
 } from "@ampersend_ai/ampersend-sdk";
+import { wrapFetchWithPayment } from "@x402/fetch";
 import { config, requireAgentKey, requireAgentAccount } from "./config.js";
 
 let _apiClient: ApiClient | null = null;
 let _approvalClient: ApprovalClient | null = null;
+let _paidFetch: ReturnType<typeof wrapFetchWithPayment> | null = null;
 
 /**
  * Returns a singleton ApiClient authenticated via SIWE with the agent's
@@ -27,6 +30,25 @@ export function getApiClient(): ApiClient {
     });
   }
   return _apiClient;
+}
+
+/**
+ * Returns a `fetch` that can pay x402-protected URLs (same stack as `ampersend fetch`).
+ *
+ * Do **not** use {@link getApiClient}'s internal HTTP for arbitrary URLs — `ApiClient` only
+ * talks to paths under {@link config.ampersendApiUrl} (SIWE + payment authorization API).
+ */
+export function getPaidFetch(): ReturnType<typeof wrapFetchWithPayment> {
+  if (!_paidFetch) {
+    const x402Client = createAmpersendHttpClient({
+      smartAccountAddress: requireAgentAccount() as `0x${string}`,
+      sessionKeyPrivateKey: requireAgentKey() as `0x${string}`,
+      apiUrl: config.ampersendApiUrl,
+      network: config.ampersendNetwork,
+    });
+    _paidFetch = wrapFetchWithPayment(fetch, x402Client);
+  }
+  return _paidFetch;
 }
 
 /**

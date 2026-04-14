@@ -10,6 +10,7 @@ export {
 // Clients
 export {
   getApiClient,
+  getPaidFetch,
   getApprovalClient,
   createTreasurer,
   createManagementClient,
