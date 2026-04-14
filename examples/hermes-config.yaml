@@ -1,0 +1,60 @@
+# Example ~/.hermes/config.yaml after running `pnpm setup`
+#
+# This shows what patchHermesConfig() writes into your Hermes config.
+# You can also copy the relevant mcp_servers section manually if you
+# prefer not to use the automated patching.
+#
+# Two transport options are shown below. Use ONE of them.
+
+# ─── Option 1: stdio (default, recommended) ────────────────────────────
+#
+# Runs the ampersend MCP proxy as a child process via npx.
+# The proxy handles SIWE auth and x402 payments internally.
+# Credentials stay in the env block — no expiring tokens in config.
+
+mcp_servers:
+  ampersend:
+    command: npx
+    args:
+      - "-y"
+      - "@ampersend_ai/ampersend-sdk"
+      - "proxy:start"
+    env:
+      BUYER_SMART_ACCOUNT_ADDRESS: "0xYourSmartAccountAddress"
+      BUYER_SMART_ACCOUNT_KEY_PRIVATE_KEY: "0xYourSessionKeyPrivateKey"
+      AMPERSEND_API_URL: "https://api.ampersend.ai"
+      AMPERSEND_NETWORK: "base"
+    timeout: 120
+    connect_timeout: 60
+
+# ─── Option 2: http (connect to already-running proxy) ─────────────────
+#
+# Start the proxy yourself with `pnpm proxy` (or `pnpm proxy --port 3000`),
+# then point Hermes at it. Useful when you want to manage the proxy
+# lifecycle separately or run it in Docker.
+#
+# mcp_servers:
+#   ampersend:
+#     url: "http://127.0.0.1:3000/mcp"
+#     timeout: 120
+#     connect_timeout: 60
+
+# ─── Your existing config ──────────────────────────────────────────────
+#
+# patchHermesConfig() merges the ampersend entry into your existing
+# mcp_servers block without touching other servers. For example, if
+# you already have other MCP servers configured:
+#
+# mcp_servers:
+#   my_other_server:
+#     url: "http://localhost:8080/mcp"
+#   ampersend:
+#     command: npx
+#     args: ["-y", "@ampersend_ai/ampersend-sdk", "proxy:start"]
+#     env:
+#       BUYER_SMART_ACCOUNT_ADDRESS: "0x..."
+#       BUYER_SMART_ACCOUNT_KEY_PRIVATE_KEY: "0x..."
+#       AMPERSEND_API_URL: "https://api.ampersend.ai"
+#       AMPERSEND_NETWORK: "base"
+#     timeout: 120
+#     connect_timeout: 60
