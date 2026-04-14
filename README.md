@@ -1,6 +1,6 @@
 # @ampersend/hermes
 
-Integration package that wires [ampersend](https://ampersend.ai) x402 payment capabilities into [Hermes Agent](https://github.com/anthropics/hermes) across three planes: MCP-based payment proxy, agent identity management via the ampersend dashboard, and client-side spend limit guardrails.
+Integration package that wires [ampersend](https://ampersend.ai) x402 payment capabilities into [Hermes Agent](https://github.com/nousresearch/hermes-agent) across three planes: MCP-based payment proxy, agent identity management via the ampersend dashboard, and client-side spend limit guardrails.
 
 This package is a thin, typed layer over the [`@ampersend_ai/ampersend-sdk`](https://github.com/edgeandnode/ampersend-sdk). It provides opinionated defaults for Hermes workflows — automatic agent setup via the approval flow, Hermes config patching for MCP payment proxying, and pre-flight spend validation — while staying composable enough to use in any agent framework.
 
@@ -11,12 +11,15 @@ This package is a thin, typed layer over the [`@ampersend_ai/ampersend-sdk`](htt
 **Recommended (Hermes, CI shells, non-TTY):** two-step flow — `start` generates a key and requests approval, `finish` polls and activates.
 
 ```bash
-cd packages/ampersend-hermes
+git clone https://github.com/edgeandnode/ampersend-hermes.git
+cd ampersend-hermes
 pnpm install
 pnpm bootstrap start --name my-hermes-agent
 # Show the user_approve_url to the user — they approve in the ampersend dashboard
 pnpm bootstrap finish
 ```
+
+If you already have the repo locally, run these commands from the **repository root** (the folder that contains `package.json`), not a monorepo `packages/` path.
 
 **One-shot setup (patches Hermes + starts proxy):**
 
@@ -30,7 +33,7 @@ pnpm setup --name my-hermes-agent
 ## Installation (Manual)
 
 ```bash
-cd packages/ampersend-hermes
+cd ampersend-hermes   # repository root
 cp .env.example .env
 # Fill in AMPERSEND_AGENT_KEY and AMPERSEND_AGENT_ACCOUNT
 pnpm install && pnpm build
@@ -40,16 +43,16 @@ pnpm install && pnpm build
 
 All environment variables are validated at startup with Zod. The variables required for operation are `AMPERSEND_AGENT_KEY` and `AMPERSEND_AGENT_ACCOUNT` — everything else defaults to **Base mainnet** and the **production ampersend API**.
 
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| AMPERSEND\_AGENT\_KEY | Yes | — | 0x-prefixed session key private key (66 chars) |
-| AMPERSEND\_AGENT\_ACCOUNT | Yes | — | 0x-prefixed smart account address (42 chars) |
-| AMPERSEND\_API\_URL | No | https://api.ampersend.ai | ampersend API base URL (production) |
-| AMPERSEND\_NETWORK | No | base | Network: `base` (mainnet) or `base-sepolia` (testnet) |
-| AMPERSEND\_CHAIN\_ID | No | 8453 | Chain ID — auto-derived from network |
-| AMPERSEND\_MCP\_PROXY\_PORT | No | 3000 | MCP proxy listen port |
-| AMPERSEND\_ENV\_FILE | No | — | Absolute path to .env when not next to this package |
-| HERMES\_CONFIG\_DIR | No | ~/.hermes | Path to Hermes config directory |
+| Variable                 | Required | Default                  | Description                                           |
+| ------------------------ | -------- | ------------------------ | ----------------------------------------------------- |
+| AMPERSEND_AGENT_KEY      | Yes      | —                        | 0x-prefixed session key private key (66 chars)        |
+| AMPERSEND_AGENT_ACCOUNT  | Yes      | —                        | 0x-prefixed smart account address (42 chars)          |
+| AMPERSEND_API_URL        | No       | https://api.ampersend.ai | ampersend API base URL (production)                   |
+| AMPERSEND_NETWORK        | No       | base                     | Network: `base` (mainnet) or `base-sepolia` (testnet) |
+| AMPERSEND_CHAIN_ID       | No       | 8453                     | Chain ID — auto-derived from network                  |
+| AMPERSEND_MCP_PROXY_PORT | No       | 3000                     | MCP proxy listen port                                 |
+| AMPERSEND_ENV_FILE       | No       | —                        | Absolute path to .env when not next to this package   |
+| HERMES_CONFIG_DIR        | No       | ~/.hermes                | Path to Hermes config directory                       |
 
 For test isolation, use `loadConfig()` with partial overrides:
 
@@ -57,6 +60,8 @@ For test isolation, use `loadConfig()` with partial overrides:
 import { loadConfig } from "@ampersend/hermes";
 const cfg = loadConfig({ AMPERSEND_AGENT_KEY: "0x..." });
 ```
+
+TypeScript examples assume you depend on this package (`"@ampersend/hermes"` in `package.json`) or use path mapping to `dist/` after `pnpm build`.
 
 ## Patch Hermes Config
 
@@ -112,17 +117,20 @@ Do **not** use `getApiClient()` for arbitrary HTTPS URLs. This package’s `getA
 
 **Use one of these instead:**
 
-| Approach | When to use |
-| --- | --- |
-| `ampersend fetch <url>` | Shell / quick test (same as SDK’s x402 HTTP stack) |
-| `getPaidFetch()` from `@ampersend/hermes` | TypeScript: paid `fetch` with x402 handling |
+| Approach                                  | When to use                                        |
+| ----------------------------------------- | -------------------------------------------------- |
+| `ampersend fetch <url>`                   | Shell / quick test (same as SDK’s x402 HTTP stack) |
+| `getPaidFetch()` from `@ampersend/hermes` | TypeScript: paid `fetch` with x402 handling        |
 
 ```typescript
 import { getPaidFetch } from "@ampersend/hermes";
 
-const fetchPaid = getPaidFetch();
-const res = await fetchPaid("https://example.com/x402-endpoint");
-console.log(await res.text());
+async function main() {
+  const fetchPaid = getPaidFetch();
+  const res = await fetchPaid("https://example.com/x402-endpoint");
+  console.log(await res.text());
+}
+void main();
 ```
 
 Inspect cost without paying:
@@ -138,9 +146,21 @@ Use the ampersend API to authorize payments with spend limits:
 ```typescript
 import { authorizePayment, getTreasurer } from "@ampersend/hermes";
 
-// Option 1: Direct API authorization
+// Option 1: Direct API authorization (requirements come from the x402 402 body)
 const result = await authorizePayment({
-  requirements: [{ scheme: "exact", network: "base", maxAmountRequired: "1000000", ... }],
+  requirements: [
+    {
+      scheme: "exact",
+      network: "base",
+      maxAmountRequired: "1000000",
+      resource: "https://api.example.com/resource",
+      description: "Example resource",
+      mimeType: "application/json",
+      payTo: "0x0000000000000000000000000000000000000001",
+      maxTimeoutSeconds: 60,
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    },
+  ],
   context: { method: "tools/call", serverUrl: "https://api.example.com" },
 });
 
@@ -156,19 +176,19 @@ Pre-validate payments before they hit the API:
 import { validatePayment, buildSpendPolicy } from "@ampersend/hermes";
 
 const policy = buildSpendPolicy({
-  perTxLimit: "1000000",    // 1 USDC
-  dailyLimit: "10000000",   // 10 USDC
-  networks: ["base"],
+    perTxLimit: "1000000", // 1 USDC
+    dailyLimit: "10000000", // 10 USDC
+    networks: ["base"],
 });
 
 validatePayment(
-  { amount: "500000", network: "base", resource: "/api/data" },
-  policy,
+    { amount: "500000", network: "base", resource: "/api/data" },
+    policy,
 ); // passes
 
 validatePayment(
-  { amount: "2000000", network: "base", resource: "/api/data" },
-  policy,
+    { amount: "2000000", network: "base", resource: "/api/data" },
+    policy,
 ); // throws SpendLimitViolationError (PER_TX_LIMIT_EXCEEDED)
 ```
 
@@ -178,21 +198,21 @@ Create and manage agents through the ampersend approval flow:
 
 ```typescript
 import {
-  requestAgentApproval,
-  waitForApproval,
-  getAgentStatus,
+    requestAgentApproval,
+    waitForApproval,
+    getAgentStatus,
 } from "@ampersend/hermes";
 
 // Request setup approval
 const pending = await requestAgentApproval("0xAgentKeyAddress", {
-  name: "my-agent",
-  dailyLimit: "10000000",
+    name: "my-agent",
+    dailyLimit: "10000000",
 });
 console.log("Approve at:", pending.userApproveUrl);
 
 // Wait for user to approve
 const result = await waitForApproval(pending.token, {
-  timeoutMs: 600_000,
+    timeoutMs: 600_000,
 });
 
 // Check status
