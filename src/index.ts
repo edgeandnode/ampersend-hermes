@@ -14,6 +14,7 @@ export {
   getApprovalClient,
   createTreasurer,
   createManagementClient,
+  type AmpersendRestClient,
 } from "./client.js";
 
 // Errors

@@ -1,6 +1,3 @@
-import { getApiClient } from "../client.js";
-import { PaymentError } from "../errors.js";
-
 export interface PaymentRecord {
   id: string;
   timestamp: Date;

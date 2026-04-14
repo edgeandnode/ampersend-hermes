@@ -17,12 +17,20 @@ let _approvalClient: ApprovalClient | null = null;
 let _paidFetch: ReturnType<typeof wrapFetchWithPayment> | null = null;
 
 /**
- * Returns a singleton ApiClient authenticated via SIWE with the agent's
- * session key. Use for ampersend REST methods (`authorizePayment`, `reportPaymentEvent`, etc.).
- *
- * Do **not** use this client to `fetch` arbitrary `https://…` URLs — use {@link getPaidFetch} for x402-paid HTTP.
+ * Supported ampersend REST API surface from {@link getApiClient}.
+ * The raw SDK `ApiClient` has a private `fetch` for ampersend API paths only; it is **not**
+ * exposed here so callers cannot mistake it for x402 `fetch` to arbitrary URLs.
  */
-export function getApiClient(): ApiClient {
+export type AmpersendRestClient = Pick<
+  InstanceType<typeof ApiClient>,
+  | "authorizePayment"
+  | "reportPaymentEvent"
+  | "clearAuth"
+  | "getAgentAddress"
+  | "isAuthenticated"
+>;
+
+function getOrCreateAmpersendApiClient(): ApiClient {
   if (!_apiClient) {
     _apiClient = new ApiClient({
       baseUrl: config.ampersendApiUrl,
@@ -35,10 +43,23 @@ export function getApiClient(): ApiClient {
 }
 
 /**
+ * Returns a thin handle for the ampersend REST API (authorize/report auth state).
+ * For x402-paid HTTP to arbitrary URLs, use {@link getPaidFetch} or the `ampersend fetch` CLI.
+ */
+export function getApiClient(): AmpersendRestClient {
+  const inner = getOrCreateAmpersendApiClient();
+  return {
+    authorizePayment: (req, ctx) => inner.authorizePayment(req, ctx),
+    reportPaymentEvent: (eventId, payment, event) =>
+      inner.reportPaymentEvent(eventId, payment, event),
+    clearAuth: () => inner.clearAuth(),
+    getAgentAddress: () => inner.getAgentAddress(),
+    isAuthenticated: () => inner.isAuthenticated(),
+  };
+}
+
+/**
  * Returns a `fetch` that can pay x402-protected URLs (same stack as `ampersend fetch`).
- *
- * Do **not** use {@link getApiClient}'s internal HTTP for arbitrary URLs — `ApiClient` only
- * talks to paths under {@link config.ampersendApiUrl} (SIWE + payment authorization API).
  */
 export function getPaidFetch(): ReturnType<typeof wrapFetchWithPayment> {
   if (!_paidFetch) {

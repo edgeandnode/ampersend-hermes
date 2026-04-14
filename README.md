@@ -108,7 +108,7 @@ pnpm setup -h                                          # full help
 
 ## Fetch paid (x402) URLs
 
-Do **not** call `getApiClient()` for arbitrary HTTPS URLs. The SDK `ApiClient` is only for paths under the ampersend API (e.g. `/api/v1/agents/...`). Calling something like `getApiClient().fetch("https://paid.example.com/...")` builds a broken URL and fails with `TypeError: fetch failed` — that is misuse, not “the remote server is down.”
+Do **not** use `getApiClient()` for arbitrary HTTPS URLs. This package’s `getApiClient()` only exposes `authorizePayment`, `reportPaymentEvent`, and related helpers — **no** `.fetch`. For paid URLs use `getPaidFetch()` or `ampersend fetch` (see below).
 
 **Use one of these instead:**
 

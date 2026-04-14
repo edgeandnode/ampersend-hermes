@@ -57,9 +57,9 @@ ampersend config set "0xagentKey:::0xagentAccount"
 
 ## TypeScript (`@ampersend/hermes`)
 
-To fetch **paid HTTP URLs** from code, use **`getPaidFetch()`** — not `getApiClient()`.
+To fetch **paid HTTP URLs** from code, use **`getPaidFetch()`**.
 
-- **`getApiClient()`** — ampersend REST API only (authorize/report). Do not pass full `https://...` URLs to any internal `fetch` on that client; you will get `TypeError: fetch failed`.
+- **`getApiClient()`** — only `authorizePayment`, `reportPaymentEvent`, `clearAuth`, `getAgentAddress`, `isAuthenticated` (no `.fetch`).
 - **`getPaidFetch()`** — returns a `fetch` that handles x402 (same stack as `ampersend fetch`).
 
 ```typescript

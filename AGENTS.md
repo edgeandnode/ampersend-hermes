@@ -8,9 +8,9 @@ This file is read by the agent at session start. It defines how to use ampersend
 - For direct CLI use (outside MCP), follow `skills/ampersend/SKILL.md` and use the `ampersend` binary on the host.
 - **Base mainnet** and the **production ampersend API** (`https://api.ampersend.ai`) are the defaults. Do not change these unless the user explicitly asks.
 
-### Paid HTTP URLs — never use `getApiClient().fetch`
+### Paid HTTP URLs — use `getPaidFetch()` or the CLI
 
-`getApiClient()` wraps the SDK **`ApiClient`**, which only talks to the **ampersend REST API** (SIWE login, `authorizePayment`, etc.). Its internal `fetch` builds URLs as `AMPERSEND_API_URL + path`. Passing a full URL like `https://example.com/...` produces an invalid URL and fails with **`TypeError: fetch failed`**. That is **not** a network outage at the destination.
+`getApiClient()` from this package exposes only **`authorizePayment`**, **`reportPaymentEvent`**, and auth helpers — it does **not** expose `.fetch`. (The raw SDK `ApiClient` has an internal HTTP helper for ampersend API paths only; calling it with a full `https://…` URL was a common mistake and is blocked here.)
 
 **Correct ways to hit an x402-paid URL:**
 
