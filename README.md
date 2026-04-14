@@ -236,18 +236,6 @@ src/
   index.ts           — Public API barrel exports
 ```
 
-## How It Compares to 1claw-hermes
-
-This package follows the same architectural pattern as [1claw-hermes](https://github.com/1clawAI/1claw-hermes) but integrates ampersend's payment capabilities instead of 1Claw's secrets management:
-
-| 1claw-hermes | ampersend-hermes |
-| --- | --- |
-| Vault secrets (get/set/list) | x402 payment authorization |
-| Shroud LLM proxy (TEE) | MCP payment proxy |
-| Subagent identities + policies | Agent approval flow + spend limits |
-| Intents API (on-chain tx signing) | x402 payment execution |
-| Audit log queries | Payment event tracking |
-
 ## License
 
 Apache 2.0
