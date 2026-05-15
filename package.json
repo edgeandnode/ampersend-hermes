@@ -16,7 +16,6 @@
     "bootstrap:start": "tsx src/bootstrap-cli.ts start",
     "bootstrap:finish": "tsx src/bootstrap-cli.ts finish",
     "setup": "tsx src/setup.ts",
-    "proxy": "tsx src/mcp/proxy-cli.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

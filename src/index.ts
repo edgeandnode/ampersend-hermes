@@ -42,19 +42,11 @@ export {
   type BootstrapResult,
 } from "./bootstrap.js";
 
-// MCP
+// Hermes model config
 export {
-  buildMcpEntry,
-  patchHermesConfig,
   patchHermesModel,
   unpatchHermesModel,
-  buildHermesMcpServerEntry,
-  buildHermesStdioMcpEntry,
-  HERMES_AMPERSEND_SERVER_KEY,
-  type HermesMcpEntry,
-  type PatchHermesOptions,
   type PatchHermesModelOptions,
-  type HermesMcpTransport,
 } from "./mcp/index.js";
 
 // Payment

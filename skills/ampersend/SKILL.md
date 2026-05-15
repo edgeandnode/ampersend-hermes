@@ -1,19 +1,19 @@
 ---
 name: ampersend
-description: ampersend CLI and MCP proxy for agent payments via x402
+description: ampersend CLI for agent payments via x402
 metadata: { "openclaw": { "requires": { "bins": ["ampersend"] } } }
 ---
 
-# ampersend — CLI + MCP skill for Hermes
+# ampersend — CLI skill for Hermes
 
 ampersend enables autonomous agent payments. Agents can make payments within user-defined spending limits without requiring human approval for each transaction. Payments use stablecoins (USDC) on Base mainnet via the x402 protocol.
 
-This skill requires `ampersend` v0.0.16. Run `ampersend --version` to check your installed version.
+This skill requires `ampersend` >= v0.0.22. Run `ampersend --version` to check your installed version.
 
 ## Installation
 
 ```bash
-npm install -g @ampersend_ai/ampersend-sdk@0.0.16
+npm install -g @ampersend_ai/ampersend-sdk@latest --force
 ```
 
 ## Security
@@ -51,8 +51,7 @@ ampersend setup start --name "my-hermes-agent" --daily-limit "1000000" --auto-to
 If you already have an agent key and account address:
 
 ```bash
-ampersend config set "0xagentKey:::0xagentAccount"
-# {"ok": true, "data": {"agentKeyAddress": "0x...", "agentAccount": "0x...", "status": "ready"}}
+ampersend config set <key:::account>       # Set active config manually
 ```
 
 ## TypeScript (`@ampersend/hermes`)
@@ -67,31 +66,6 @@ import { getPaidFetch } from "@ampersend/hermes";
 
 const fetchPaid = getPaidFetch();
 const res = await fetchPaid("https://example.com/paid-endpoint");
-```
-
-## MCP proxy (Hermes-specific)
-
-After setup, the ampersend MCP proxy is registered under `mcp_servers.ampersend` in Hermes config. The proxy intercepts x402 payment challenges automatically — when an MCP tool call hits a paid endpoint, the proxy:
-
-1. Receives the 402 response with payment requirements
-2. Authorizes payment via the ampersend API (within configured spend limits)
-3. Signs the payment with the agent's session key
-4. Retries the request with the payment proof attached
-
-Tools appear in Hermes as `mcp_ampersend_*`. Run `/reload-mcp` in Hermes after config changes.
-
-### Start the proxy manually
-
-```bash
-pnpm proxy                    # default port 3000
-pnpm proxy --port 4000        # custom port
-```
-
-### Patch Hermes config programmatically
-
-```typescript
-import { patchHermesConfig } from "@ampersend/hermes";
-await patchHermesConfig("~/.hermes");
 ```
 
 ## CLI commands
