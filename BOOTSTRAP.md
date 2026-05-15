@@ -21,7 +21,7 @@ pnpm install
 pnpm setup --name "my-hermes-agent"
 ```
 
-This generates a key, requests approval, patches Hermes config, and starts the MCP proxy. It will print a `user_approve_url` — the **human** must open that URL in **their own browser** (not one the agent controls) and approve.
+This generates a key, requests approval, builds the package, verifies the `paid_fetch` MCP tool, and patches Hermes config. It will print a `user_approve_url` — the **human** must open that URL in **their own browser** (not one the agent controls) and approve.
 
 ### Option B: Two-step flow
 
@@ -33,6 +33,13 @@ Show the `user_approve_url` from the output to the human. After they approve:
 
 ```bash
 pnpm bootstrap finish
+```
+
+Then build and patch Hermes config:
+
+```bash
+pnpm build
+pnpm setup --skip-bootstrap
 ```
 
 ### Option C: Manual config
@@ -61,7 +68,7 @@ Switch to Hermes and run:
 /reload-mcp
 ```
 
-The ampersend MCP tools should now be available.
+Ask Hermes: *"What ampersend tools do you have?"* You should see `paid_fetch`.
 
 ## 5) Test
 
@@ -71,7 +78,7 @@ Try inspecting a paid endpoint (no funds spent):
 ampersend fetch --inspect https://api.example.com/paid-endpoint
 ```
 
-From TypeScript, use **`getPaidFetch()`** from `@ampersend/hermes` for paid URLs. `getApiClient()` has no `.fetch` (see README “Fetch paid (x402) URLs”).
+Or ask Hermes to call `paid_fetch` with a URL. From TypeScript, use **`getPaidFetch()`** from `@ampersend/hermes` for paid URLs. `getApiClient()` has no `.fetch` (see README "Fetch paid (x402) URLs").
 
 ## 6) Done
 

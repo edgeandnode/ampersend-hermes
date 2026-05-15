@@ -1,52 +1,28 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { config, requireAgentKey, requireAgentAccount } from "../config.js";
 
 /** Hermes `mcp_servers` key; tools appear as `mcp_ampersend_*`. */
 export const HERMES_AMPERSEND_SERVER_KEY = "ampersend";
 
-/** Default: local stdio proxy — credentials stay local. */
-export type HermesMcpTransport = "stdio" | "http";
-
-export interface PatchHermesOptions {
-  /**
-   * `stdio` (default): `npx @ampersend_ai/ampersend-sdk proxy:start` with env-based
-   * credentials; SIWE auth runs inside the proxy process.
-   * `http`: connect to an already-running proxy at `http://127.0.0.1:<port>/mcp`.
-   */
-  transport?: HermesMcpTransport;
-  /** Port for HTTP transport (default: 3000). */
-  proxyPort?: number;
-}
-
-export interface HermesMcpEntry {
-  url: string;
-  timeout: number;
-  connect_timeout: number;
-}
-
-export function buildHermesMcpServerEntry(proxyPort?: number): HermesMcpEntry {
-  const port = proxyPort ?? config.ampersendMcpProxyPort;
-  return {
-    url: `http://127.0.0.1:${port}/mcp`,
-    timeout: 120,
-    connect_timeout: 60,
-  };
-}
-
 /**
- * Stdio entry: runs the ampersend MCP proxy via npx with session key credentials in env.
- * The proxy handles SIWE auth and x402 payments internally.
+ * Stdio entry: launches the in-repo `paid_fetch` MCP server directly via node.
+ * The server exposes a single `paid_fetch` tool backed by `getPaidFetch()`.
  */
 export function buildHermesStdioMcpEntry(): Record<string, unknown> {
+  const packageRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../..",
+  );
   return {
-    command: "npx",
-    args: ["-y", "@ampersend_ai/ampersend-sdk", "proxy:start"],
+    command: process.execPath,
+    args: [path.resolve(packageRoot, "dist/mcp/fetch-server.js")],
     env: {
-      BUYER_SMART_ACCOUNT_ADDRESS: requireAgentAccount(),
-      BUYER_SMART_ACCOUNT_KEY_PRIVATE_KEY: requireAgentKey(),
+      AMPERSEND_AGENT_KEY: requireAgentKey(),
+      AMPERSEND_AGENT_ACCOUNT: requireAgentAccount(),
       AMPERSEND_API_URL: config.ampersendApiUrl,
       AMPERSEND_NETWORK: config.ampersendNetwork,
     },
@@ -128,17 +104,12 @@ async function patchJson(
  * Merge ampersend MCP into Hermes config. Prefers `~/.hermes/config.yaml`;
  * falls back to `config.json` if only that exists.
  *
- * **Default (`transport: 'stdio'`)** runs the ampersend MCP proxy via
- * `npx` with agent credentials in `env` — the proxy handles SIWE auth
- * and x402 payments automatically.
- *
- * **`transport: 'http'`** targets an already-running proxy at localhost.
+ * Writes a stdio MCP server entry that runs the in-repo `paid_fetch` tool
+ * directly via node. Agent credentials are passed in the `env` block.
  */
 export async function patchHermesConfig(
   configDir: string,
-  options: PatchHermesOptions = {},
 ): Promise<void> {
-  const transport = options.transport ?? "stdio";
   const resolved = resolveHermesDir(configDir);
 
   await fs.promises.mkdir(resolved, { recursive: true });
@@ -146,10 +117,7 @@ export async function patchHermesConfig(
   const yamlPath = path.join(resolved, "config.yaml");
   const jsonPath = path.join(resolved, "config.json");
 
-  const entry =
-    transport === "stdio"
-      ? buildHermesStdioMcpEntry()
-      : { ...buildHermesMcpServerEntry(options.proxyPort) };
+  const entry = buildHermesStdioMcpEntry();
 
   if (fs.existsSync(yamlPath)) {
     await backupFile(yamlPath);

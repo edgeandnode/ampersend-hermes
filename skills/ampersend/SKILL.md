@@ -1,6 +1,6 @@
 ---
 name: ampersend
-description: ampersend CLI and MCP proxy for agent payments via x402
+description: ampersend CLI and MCP tool for agent payments via x402
 metadata: { "openclaw": { "requires": { "bins": ["ampersend"] } } }
 ---
 
@@ -69,23 +69,44 @@ const fetchPaid = getPaidFetch();
 const res = await fetchPaid("https://example.com/paid-endpoint");
 ```
 
-## MCP proxy (Hermes-specific)
+## MCP tool (Hermes)
 
-After setup, the ampersend MCP proxy is registered under `mcp_servers.ampersend` in Hermes config. The proxy intercepts x402 payment challenges automatically — when an MCP tool call hits a paid endpoint, the proxy:
+After setup, the ampersend MCP server is registered under `mcp_servers.ampersend` in Hermes config. It exposes a single tool:
 
-1. Receives the 402 response with payment requirements
-2. Authorizes payment via the ampersend API (within configured spend limits)
-3. Signs the payment with the agent's session key
-4. Retries the request with the payment proof attached
+### `paid_fetch`
+
+Fetch any HTTPS URL with automatic x402 payment handling.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `url` | string (URL) | Yes | The URL to fetch |
+| `method` | string | No | HTTP method: GET (default), POST, PUT, DELETE, PATCH |
+| `headers` | object | No | Request headers as key-value pairs |
+| `body` | string | No | Request body |
+
+**Returns** JSON with:
+
+| Field | Description |
+| --- | --- |
+| `ok` | Boolean — true if status is 2xx |
+| `status` | HTTP status code |
+| `statusText` | HTTP status text |
+| `headers` | Response headers as key-value pairs |
+| `body` | Response body (truncated to 256 KB) |
+| `bodyBytes` | Total body size in bytes |
+| `truncated` | Boolean — true if body was truncated |
+
+**How it works:**
+
+1. Agent calls `paid_fetch` with a URL
+2. The tool fetches the URL via `getPaidFetch()`
+3. If the server returns 402, the SDK authorizes payment via the ampersend API (within spend limits)
+4. The SDK signs the payment and retries with the payment proof
+5. The tool returns the final response to the agent
 
 Tools appear in Hermes as `mcp_ampersend_*`. Run `/reload-mcp` in Hermes after config changes.
-
-### Start the proxy manually
-
-```bash
-pnpm proxy                    # default port 3000
-pnpm proxy --port 4000        # custom port
-```
 
 ### Patch Hermes config programmatically
 

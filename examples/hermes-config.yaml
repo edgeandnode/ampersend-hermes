@@ -4,40 +4,25 @@
 # You can also copy the relevant mcp_servers section manually if you
 # prefer not to use the automated patching.
 #
-# Two transport options are shown below. Use ONE of them.
-
-# ─── Option 1: stdio (default, recommended) ────────────────────────────
+# The ampersend MCP server runs as a stdio child process. It exposes a
+# single `paid_fetch` tool that handles x402 payment challenges
+# automatically via the agent's smart account.
 #
-# Runs the ampersend MCP proxy as a child process via npx.
-# The proxy handles SIWE auth and x402 payments internally.
-# Credentials stay in the env block — no expiring tokens in config.
+# Replace the `args` path with the actual absolute path to your clone.
+# `pnpm setup` fills this in automatically.
 
 mcp_servers:
   ampersend:
-    command: npx
+    command: node
     args:
-      - "-y"
-      - "@ampersend_ai/ampersend-sdk"
-      - "proxy:start"
+      - "/path/to/ampersend-hermes/dist/mcp/fetch-server.js"
     env:
-      BUYER_SMART_ACCOUNT_ADDRESS: "0xYourSmartAccountAddress"
-      BUYER_SMART_ACCOUNT_KEY_PRIVATE_KEY: "0xYourSessionKeyPrivateKey"
+      AMPERSEND_AGENT_KEY: "0xYourSessionKeyPrivateKey"
+      AMPERSEND_AGENT_ACCOUNT: "0xYourSmartAccountAddress"
       AMPERSEND_API_URL: "https://api.ampersend.ai"
       AMPERSEND_NETWORK: "base"
     timeout: 120
     connect_timeout: 60
-
-# ─── Option 2: http (connect to already-running proxy) ─────────────────
-#
-# Start the proxy yourself with `pnpm proxy` (or `pnpm proxy --port 3000`),
-# then point Hermes at it. Useful when you want to manage the proxy
-# lifecycle separately or run it in Docker.
-#
-# mcp_servers:
-#   ampersend:
-#     url: "http://127.0.0.1:3000/mcp"
-#     timeout: 120
-#     connect_timeout: 60
 
 # ─── Your existing config ──────────────────────────────────────────────
 #
@@ -49,11 +34,11 @@ mcp_servers:
 #   my_other_server:
 #     url: "http://localhost:8080/mcp"
 #   ampersend:
-#     command: npx
-#     args: ["-y", "@ampersend_ai/ampersend-sdk", "proxy:start"]
+#     command: node
+#     args: ["/path/to/ampersend-hermes/dist/mcp/fetch-server.js"]
 #     env:
-#       BUYER_SMART_ACCOUNT_ADDRESS: "0x..."
-#       BUYER_SMART_ACCOUNT_KEY_PRIVATE_KEY: "0x..."
+#       AMPERSEND_AGENT_KEY: "0x..."
+#       AMPERSEND_AGENT_ACCOUNT: "0x..."
 #       AMPERSEND_API_URL: "https://api.ampersend.ai"
 #       AMPERSEND_NETWORK: "base"
 #     timeout: 120

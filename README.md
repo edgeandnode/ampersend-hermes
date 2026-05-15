@@ -1,8 +1,8 @@
 # @ampersend/hermes
 
-Integration package that wires [ampersend](https://ampersend.ai) x402 payment capabilities into [Hermes Agent](https://github.com/nousresearch/hermes-agent) across three planes: MCP-based payment proxy, agent identity management via the ampersend dashboard, and client-side spend limit guardrails.
+Integration package that wires [ampersend](https://ampersend.ai) x402 payment capabilities into [Hermes Agent](https://github.com/nousresearch/hermes-agent) across three planes: a `paid_fetch` MCP tool for x402-paid URL fetching, agent identity management via the ampersend dashboard, and client-side spend limit guardrails.
 
-This package is a thin, typed layer over the [`@ampersend_ai/ampersend-sdk`](https://github.com/edgeandnode/ampersend-sdk). It provides opinionated defaults for Hermes workflows — automatic agent setup via the approval flow, Hermes config patching for MCP payment proxying, and pre-flight spend validation — while staying composable enough to use in any agent framework.
+This package is a thin, typed layer over the [`@ampersend_ai/ampersend-sdk`](https://github.com/edgeandnode/ampersend-sdk). It provides opinionated defaults for Hermes workflows — automatic agent setup via the approval flow, Hermes config patching for the `paid_fetch` MCP tool, and pre-flight spend validation — while staying composable enough to use in any agent framework.
 
 ## Quick Start (Bootstrap)
 
@@ -21,11 +21,11 @@ pnpm bootstrap finish
 
 If you already have the repo locally, run these commands from the **repository root** (the folder that contains `package.json`), not a monorepo `packages/` path.
 
-**One-shot setup (patches Hermes + starts proxy):**
+**One-shot setup (patches Hermes config):**
 
 ```bash
 pnpm setup --name my-hermes-agent
-# Requests approval, waits for it, patches Hermes config, starts MCP proxy
+# Requests approval, waits for it, builds, verifies paid_fetch tool, patches Hermes config
 # Uses Base mainnet + production ampersend by default
 # Switch to Hermes and run /reload-mcp
 ```
@@ -50,7 +50,6 @@ All environment variables are validated at startup with Zod. The variables requi
 | AMPERSEND_API_URL        | No       | https://api.ampersend.ai | ampersend API base URL (production)                   |
 | AMPERSEND_NETWORK        | No       | base                     | Network: `base` (mainnet) or `base-sepolia` (testnet) |
 | AMPERSEND_CHAIN_ID       | No       | 8453                     | Chain ID — auto-derived from network                  |
-| AMPERSEND_MCP_PROXY_PORT | No       | 3000                     | MCP proxy listen port                                 |
 | AMPERSEND_ENV_FILE       | No       | —                        | Absolute path to .env when not next to this package   |
 | HERMES_CONFIG_DIR        | No       | ~/.hermes                | Path to Hermes config directory                       |
 
@@ -65,20 +64,14 @@ TypeScript examples assume you depend on this package (`"@ampersend/hermes"` in 
 
 ## Patch Hermes Config
 
-Register ampersend under `mcp_servers.ampersend` (tools proxied via x402):
+Register ampersend under `mcp_servers.ampersend` (stdio `paid_fetch` MCP tool):
 
 ```typescript
 import { patchHermesConfig } from "@ampersend/hermes";
 await patchHermesConfig("~/.hermes");
 ```
 
-**Default (`stdio`) — recommended:** writes a **stdio** server entry that runs the ampersend MCP proxy via `npx` with agent credentials in `env`. The proxy handles SIWE authentication and x402 payments internally.
-
-**Optional HTTP (`transport: 'http'`):** connects to an already-running proxy at `http://127.0.0.1:<port>/mcp`:
-
-```typescript
-await patchHermesConfig("~/.hermes", { transport: "http", proxyPort: 3000 });
-```
+Writes a stdio MCP server entry that runs the in-repo `paid_fetch` tool directly via node. Agent credentials are passed in the `env` block.
 
 **Apply in Hermes** (no full restart required):
 
@@ -95,17 +88,15 @@ pnpm setup --name my-hermes-agent
 This does **everything** (Base mainnet + production ampersend by default):
 
 1. Reads `AMPERSEND_AGENT_KEY` / `AMPERSEND_AGENT_ACCOUNT` from `.env` (runs bootstrap if missing).
-2. Patches `~/.hermes/config.yaml` → `mcp_servers.ampersend` (MCP proxy with x402 payments).
-3. Starts the MCP proxy → waits for ready → prints "ready".
-4. Keeps running (Ctrl+C to stop).
+2. Builds the package (`pnpm build`).
+3. Verifies the `paid_fetch` MCP tool starts correctly.
+4. Patches `~/.hermes/config.yaml` → `mcp_servers.ampersend` (stdio `paid_fetch` tool).
 
 Switch back to Hermes and run `/reload-mcp`. Done.
 
 Options:
 
 ```bash
-pnpm setup --name my-agent --proxy-port 4000          # custom port
-pnpm setup --name my-agent --no-proxy                 # patch only, start proxy yourself
 pnpm setup --name my-agent --daily-limit 10000000     # 10 USDC daily limit
 pnpm setup --name my-agent --network base-sepolia     # testnet (for development only)
 pnpm setup -h                                          # full help
@@ -229,7 +220,7 @@ pnpm build        # compile to dist/
 pnpm bootstrap start --name agent    # request approval
 pnpm bootstrap finish                # poll + activate
 pnpm setup --name agent              # all-in-one
-pnpm proxy                           # start MCP proxy only
+pnpm mcp:fetch                       # run paid_fetch MCP server (dev)
 ```
 
 ## Architecture
@@ -242,11 +233,12 @@ src/
   errors.ts          — Typed error classes (ConfigError, PaymentError, SpendLimitViolationError)
   bootstrap.ts       — Two-phase: start (generate key + request approval) → finish (poll + write .env)
   bootstrap-cli.ts   — CLI: start | finish
-  setup.ts           — Unified CLI: bootstrap → patch MCP → start proxy
+  setup.ts           — Unified CLI: bootstrap → build → verify → patch Hermes config
   mcp/
-    index.ts         — buildMcpEntry (proxy URL)
+    index.ts         — MCP barrel exports
     hermes-config.ts — patchHermesConfig, patchHermesModel, unpatchHermesModel → config.yaml
-    proxy-cli.ts     — Standalone MCP proxy runner
+    fetch-server.ts  — Stdio MCP server exposing the paid_fetch tool
+    proxy-cli.ts     — (deprecated) Standalone HTTP gateway proxy runner
   payment/
     index.ts         — Payment authorization and event reporting via ampersend API
     guardrails.ts    — Client-side spend limit validation (network, per-tx)

@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { bootstrapStart, bootstrapFinish } from "./bootstrap.js";
-import { patchHermesConfig } from "./mcp/hermes-config.js";
-import { loadConfig } from "./config.js";
-import { resolveDotEnvPath } from "./dotenv-path.js";
-import { parseDotEnv } from "./bootstrap.js";
+import { execSync, spawn } from "node:child_process";
 import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { bootstrapStart, bootstrapFinish, parseDotEnv } from "./bootstrap.js";
+import { patchHermesConfig } from "./mcp/hermes-config.js";
+import { resolveDotEnvPath } from "./dotenv-path.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageRoot = path.resolve(__dirname, "..");
 
 function usage(): never {
   process.stderr.write(`
 Usage: pnpm setup [options]
 
-All-in-one: bootstrap agent → patch Hermes MCP config → start proxy.
+All-in-one: bootstrap agent → build → verify MCP tool → patch Hermes config.
 After this, switch to Hermes and run /reload-mcp.
 
 Options:
   --name            Agent name (required for first-time setup)
   --network         Network: base (default) or base-sepolia
-  --proxy-port      MCP proxy port (default: 3000)
-  --no-proxy        Patch configs only, don't start the proxy
   --hermes-dir      Hermes config directory (default: ~/.hermes)
   --env-path        Path to .env file
   --api-url         API URL override
@@ -31,13 +33,83 @@ Options:
 Flow:
   1. Reads AMPERSEND_AGENT_KEY + AMPERSEND_AGENT_ACCOUNT from .env
      (runs bootstrap start/finish if missing)
-  2. Patches ~/.hermes/config.yaml → mcp_servers.ampersend (stdio MCP proxy)
-  3. Starts the MCP proxy → waits for ready → prints "ready"
-  4. Keeps running (Ctrl+C to stop)
+  2. Builds the package (pnpm build)
+  3. Verifies the paid_fetch MCP tool starts correctly
+  4. Patches ~/.hermes/config.yaml → mcp_servers.ampersend (stdio MCP tool)
 
 Switch back to Hermes and run /reload-mcp. Done.
 `);
   process.exit(0);
+}
+
+function smokeTestMcpShim(envVars: Record<string, string>): Promise<void> {
+  const shimPath = path.resolve(packageRoot, "dist/mcp/fetch-server.js");
+  if (!fs.existsSync(shimPath)) {
+    return Promise.reject(
+      new Error(`MCP shim not found at ${shimPath}. Build may have failed.`),
+    );
+  }
+
+  const initMsg = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "smoke-test", version: "0.0.1" },
+    },
+  });
+  const notifyMsg = JSON.stringify({
+    jsonrpc: "2.0",
+    method: "notifications/initialized",
+  });
+  const listMsg = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/list",
+  });
+
+  const input = `${initMsg}\n${notifyMsg}\n${listMsg}\n`;
+
+  const child = spawn(process.execPath, [shimPath], {
+    env: { ...process.env, ...envVars },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+  child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+
+  child.stdin.write(input);
+  child.stdin.end();
+
+  const killTimer = setTimeout(() => {
+    child.kill("SIGTERM");
+  }, 10_000);
+
+  return new Promise<void>((resolve, reject) => {
+    child.on("close", (code) => {
+      clearTimeout(killTimer);
+      if (stdout.includes('"paid_fetch"')) {
+        resolve();
+      } else {
+        reject(
+          new Error(
+            `MCP shim smoke test failed (exit ${code}).\n` +
+              `Expected "paid_fetch" in tools/list response.\n` +
+              `stdout: ${stdout.slice(0, 500)}\n` +
+              `stderr: ${stderr.slice(0, 500)}`,
+          ),
+        );
+      }
+    });
+    child.on("error", (err) => {
+      clearTimeout(killTimer);
+      reject(new Error(`Failed to spawn MCP shim: ${err.message}`));
+    });
+  });
 }
 
 async function main(): Promise<void> {
@@ -46,8 +118,6 @@ async function main(): Promise<void> {
     options: {
       name: { type: "string" },
       network: { type: "string" },
-      "proxy-port": { type: "string" },
-      "no-proxy": { type: "boolean" },
       "hermes-dir": { type: "string" },
       "env-path": { type: "string" },
       "api-url": { type: "string" },
@@ -63,10 +133,8 @@ async function main(): Promise<void> {
   if (values.help) usage();
 
   const hermesDir = values["hermes-dir"] ?? "~/.hermes";
-  const proxyPort = values["proxy-port"] ? parseInt(values["proxy-port"], 10) : 3000;
   const envPath = values["env-path"] ?? resolveDotEnvPath({});
   const apiUrl = values["api-url"];
-  const startProxy = !values["no-proxy"];
 
   // Step 1: Check if bootstrap is needed
   let hasCredentials = false;
@@ -84,7 +152,7 @@ async function main(): Promise<void> {
     if (!agentName) {
       process.stderr.write(
         "Error: --name is required for first-time setup. Run:\n" +
-        "  pnpm setup --name my-hermes-agent\n",
+          "  pnpm setup --name my-hermes-agent\n",
       );
       process.exit(1);
     }
@@ -102,8 +170,12 @@ async function main(): Promise<void> {
       autoTopup: values["auto-topup"],
     });
 
-    process.stderr.write(`\n[ampersend-hermes] Approval URL: ${startResult.userApproveUrl}\n`);
-    process.stderr.write("[ampersend-hermes] Waiting for user approval...\n\n");
+    process.stderr.write(
+      `\n[ampersend-hermes] Approval URL: ${startResult.userApproveUrl}\n`,
+    );
+    process.stderr.write(
+      "[ampersend-hermes] Waiting for user approval...\n\n",
+    );
 
     await bootstrapFinish({
       envPath,
@@ -118,54 +190,45 @@ async function main(): Promise<void> {
   const raw = await fs.promises.readFile(envPath, "utf-8");
   const parsed = parseDotEnv(raw);
 
-  // Set env vars so config picks them up
-  if (parsed.AMPERSEND_AGENT_KEY) process.env.AMPERSEND_AGENT_KEY = parsed.AMPERSEND_AGENT_KEY;
-  if (parsed.AMPERSEND_AGENT_ACCOUNT) process.env.AMPERSEND_AGENT_ACCOUNT = parsed.AMPERSEND_AGENT_ACCOUNT;
-  if (parsed.AMPERSEND_API_URL) process.env.AMPERSEND_API_URL = parsed.AMPERSEND_API_URL;
+  if (parsed.AMPERSEND_AGENT_KEY)
+    process.env.AMPERSEND_AGENT_KEY = parsed.AMPERSEND_AGENT_KEY;
+  if (parsed.AMPERSEND_AGENT_ACCOUNT)
+    process.env.AMPERSEND_AGENT_ACCOUNT = parsed.AMPERSEND_AGENT_ACCOUNT;
+  if (parsed.AMPERSEND_API_URL)
+    process.env.AMPERSEND_API_URL = parsed.AMPERSEND_API_URL;
   if (values.network) process.env.AMPERSEND_NETWORK = values.network;
 
-  // Step 2: Patch Hermes config
-  process.stderr.write("[ampersend-hermes] Patching Hermes MCP config...\n");
-  await patchHermesConfig(hermesDir, {
-    transport: startProxy ? "http" : "stdio",
-    proxyPort,
-  });
-  process.stderr.write(`[ampersend-hermes] Hermes config patched → mcp_servers.ampersend\n`);
-
-  if (!startProxy) {
-    process.stderr.write(
-      "\n[ampersend-hermes] Config patched (stdio). Switch to Hermes and run /reload-mcp.\n",
-    );
-    return;
+  // Step 2: Build to ensure dist/mcp/fetch-server.js exists
+  process.stderr.write("[ampersend-hermes] Building package...\n");
+  try {
+    execSync("pnpm build", { cwd: packageRoot, stdio: "pipe" });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    process.stderr.write(`[ampersend-hermes] Build failed: ${msg}\n`);
+    process.exit(1);
   }
+  process.stderr.write("[ampersend-hermes] Build complete.\n");
 
-  // Step 3: Start MCP proxy
-  process.stderr.write(`[ampersend-hermes] Starting MCP proxy on port ${proxyPort}...\n`);
-
-  const cfg = loadConfig();
-
-  const { createAmpersendProxy } = await import("@ampersend_ai/ampersend-sdk");
-
-  const chainId = cfg.ampersendChainId ??
-    (cfg.ampersendNetwork === "base-sepolia" ? 84532 : 8453);
-
-  const { server } = await createAmpersendProxy({
-    port: proxyPort,
-    smartAccountAddress: cfg.ampersendAgentAccount as `0x${string}`,
-    sessionKeyPrivateKey: cfg.ampersendAgentKey as `0x${string}`,
-    apiUrl: cfg.ampersendApiUrl,
-    chainId,
-  });
-
-  process.stderr.write(`\n[ampersend-hermes] MCP proxy ready at http://127.0.0.1:${proxyPort}/mcp\n`);
-  process.stderr.write("[ampersend-hermes] Switch to Hermes and run /reload-mcp\n\n");
-
-  const shutdown = () => {
-    process.stderr.write("\n[ampersend-hermes] Shutting down...\n");
-    process.exit(0);
+  // Step 3: Smoke-test the MCP shim
+  process.stderr.write("[ampersend-hermes] Verifying paid_fetch MCP tool...\n");
+  const shimEnv: Record<string, string> = {
+    AMPERSEND_AGENT_KEY: parsed.AMPERSEND_AGENT_KEY ?? "",
+    AMPERSEND_AGENT_ACCOUNT: parsed.AMPERSEND_AGENT_ACCOUNT ?? "",
+    AMPERSEND_API_URL: parsed.AMPERSEND_API_URL ?? "https://api.ampersend.ai",
+    AMPERSEND_NETWORK: values.network ?? parsed.AMPERSEND_NETWORK ?? "base",
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  await smokeTestMcpShim(shimEnv);
+  process.stderr.write("[ampersend-hermes] paid_fetch tool verified.\n");
+
+  // Step 4: Patch Hermes config
+  process.stderr.write("[ampersend-hermes] Patching Hermes MCP config...\n");
+  await patchHermesConfig(hermesDir);
+  process.stderr.write(
+    "[ampersend-hermes] Hermes config patched → mcp_servers.ampersend\n",
+  );
+  process.stderr.write(
+    "\n[ampersend-hermes] Done. Switch to Hermes and run /reload-mcp.\n",
+  );
 }
 
 main().catch((err: unknown) => {

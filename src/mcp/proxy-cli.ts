@@ -1,8 +1,19 @@
 #!/usr/bin/env node
+/**
+ * @deprecated Use `pnpm mcp:fetch` (or the `ampersend-paid-fetch-mcp` bin)
+ * instead. The HTTP gateway proxy does not expose MCP tools to Hermes —
+ * use the stdio `paid_fetch` MCP server for x402-paid URL fetching.
+ */
 import { parseArgs } from "node:util";
 import { config, requireAgentKey, requireAgentAccount } from "../config.js";
 
 async function main(): Promise<void> {
+  process.stderr.write(
+    "[ampersend-hermes] DEPRECATED: `pnpm proxy` starts an HTTP gateway that " +
+      "does not expose MCP tools.\n" +
+      "[ampersend-hermes] Use `pnpm mcp:fetch` or the `ampersend-paid-fetch-mcp` " +
+      "binary instead.\n\n",
+  );
   const { values } = parseArgs({
     args: process.argv.slice(2),
     options: {
