@@ -13,7 +13,15 @@ cd ampersend-hermes
 pnpm install
 ```
 
-## 2) Set up the agent
+## 2) Install the ampersend CLI
+
+```bash
+npm install -g @ampersend_ai/ampersend-sdk@latest --force
+```
+
+Verify: `ampersend --version` (should be >= 0.0.22).
+
+## 3) Set up the agent
 
 ### Option A: One command (recommended)
 
@@ -21,7 +29,7 @@ pnpm install
 pnpm setup --name "my-hermes-agent"
 ```
 
-This generates a key, requests approval, builds the package, verifies the `paid_fetch` MCP tool, and patches Hermes config. It will print a `user_approve_url` — the **human** must open that URL in **their own browser** (not one the agent controls) and approve.
+This generates a key, requests approval, and verifies the CLI. It will print a `user_approve_url` — the **human** must open that URL in **their own browser** (not one the agent controls) and approve.
 
 ### Option B: Two-step flow
 
@@ -35,13 +43,6 @@ Show the `user_approve_url` from the output to the human. After they approve:
 pnpm bootstrap finish
 ```
 
-Then build and patch Hermes config:
-
-```bash
-pnpm build
-pnpm setup --skip-bootstrap
-```
-
 ### Option C: Manual config
 
 If the human already has an agent key and account address:
@@ -49,26 +50,15 @@ If the human already has an agent key and account address:
 ```bash
 cp .env.example .env
 # Edit .env: set AMPERSEND_AGENT_KEY and AMPERSEND_AGENT_ACCOUNT
-pnpm build
 ```
 
-## 3) Verify
+## 4) Verify
 
 ```bash
 ampersend config status
 ```
 
 Should show `"status": "ready"` with an `agentAccount` address.
-
-## 4) Reload Hermes MCP
-
-Switch to Hermes and run:
-
-```
-/reload-mcp
-```
-
-Ask Hermes: *"What ampersend tools do you have?"* You should see `paid_fetch`.
 
 ## 5) Test
 
@@ -78,7 +68,7 @@ Try inspecting a paid endpoint (no funds spent):
 ampersend fetch --inspect https://api.example.com/paid-endpoint
 ```
 
-Or ask Hermes to call `paid_fetch` with a URL. From TypeScript, use **`getPaidFetch()`** from `@ampersend/hermes` for paid URLs. `getApiClient()` has no `.fetch` (see README "Fetch paid (x402) URLs").
+Or from TypeScript, use **`getPaidFetch()`** from `@ampersend/hermes` for paid URLs. `getApiClient()` has no `.fetch` (see README "Fetch paid (x402) URLs").
 
 ## 6) Done
 

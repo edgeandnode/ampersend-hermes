@@ -1,45 +1,20 @@
-# Example ~/.hermes/config.yaml after running `pnpm setup`
+# Example ~/.hermes/config.yaml — CLI-first integration
 #
-# This shows what patchHermesConfig() writes into your Hermes config.
-# You can also copy the relevant mcp_servers section manually if you
-# prefer not to use the automated patching.
+# ampersend-hermes no longer patches Hermes config with a custom MCP server.
+# Instead, agents use the `ampersend` CLI directly from the terminal:
 #
-# The ampersend MCP server runs as a stdio child process. It exposes a
-# single `paid_fetch` tool that handles x402 payment challenges
-# automatically via the agent's smart account.
+#   ampersend fetch --inspect <url>   # check cost (no charge)
+#   ampersend fetch <url>             # fetch and auto-pay x402
 #
-# Replace the `args` path with the actual absolute path to your clone.
-# `pnpm setup` fills this in automatically.
-
-mcp_servers:
-  ampersend:
-    command: node
-    args:
-      - "/path/to/ampersend-hermes/dist/mcp/fetch-server.js"
-    env:
-      AMPERSEND_AGENT_KEY: "0xYourSessionKeyPrivateKey"
-      AMPERSEND_AGENT_ACCOUNT: "0xYourSmartAccountAddress"
-      AMPERSEND_API_URL: "https://api.ampersend.ai"
-      AMPERSEND_NETWORK: "base"
-    timeout: 120
-    connect_timeout: 60
-
-# ─── Your existing config ──────────────────────────────────────────────
-#
-# patchHermesConfig() merges the ampersend entry into your existing
-# mcp_servers block without touching other servers. For example, if
-# you already have other MCP servers configured:
+# If you want to add ampersend as a stdio MCP tool yourself, you can
+# point it at the official CLI binary:
 #
 # mcp_servers:
-#   my_other_server:
-#     url: "http://localhost:8080/mcp"
 #   ampersend:
-#     command: node
-#     args: ["/path/to/ampersend-hermes/dist/mcp/fetch-server.js"]
-#     env:
-#       AMPERSEND_AGENT_KEY: "0x..."
-#       AMPERSEND_AGENT_ACCOUNT: "0x..."
-#       AMPERSEND_API_URL: "https://api.ampersend.ai"
-#       AMPERSEND_NETWORK: "base"
+#     command: ampersend
+#     args: ["mcp"]
 #     timeout: 120
 #     connect_timeout: 60
+#
+# But the recommended approach is to just use `ampersend fetch` from the
+# agent's shell. See AGENTS.md and skills/ampersend/SKILL.md for details.

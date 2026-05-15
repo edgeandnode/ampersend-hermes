@@ -4,19 +4,17 @@ This file is read by the agent at session start. It defines how to use ampersend
 
 ## ampersend (x402 / agent payments)
 
-- When the user needs **paid HTTP APIs** (x402 / HTTP 402 flows) or **autonomous stablecoin payments within limits**, use the `paid_fetch` MCP tool registered under `mcp_servers.ampersend` in Hermes config.
-- For direct CLI use (outside MCP), follow `skills/ampersend/SKILL.md` and use the `ampersend` binary on the host.
+- When the user needs **paid HTTP APIs** (x402 / HTTP 402 flows) or **autonomous stablecoin payments within limits**, use the `ampersend` CLI from the agent's terminal.
 - **Base mainnet** and the **production ampersend API** (`https://api.ampersend.ai`) are the defaults. Do not change these unless the user explicitly asks.
 
-### Paid HTTP URLs — use `paid_fetch`, `getPaidFetch()`, or the CLI
+### Paid HTTP URLs — use the CLI or `getPaidFetch()`
 
 `getApiClient()` from this package exposes only **`authorizePayment`**, **`reportPaymentEvent`**, and auth helpers — it does **not** expose `.fetch`. (The raw SDK `ApiClient` has an internal HTTP helper for ampersend API paths only; calling it with a full `https://…` URL was a common mistake and is blocked here.)
 
 **Correct ways to hit an x402-paid URL:**
 
-1. **MCP tool:** Call `paid_fetch` with a URL. The tool handles 402 negotiation, payment authorization, and retry automatically.
-2. **CLI:** `ampersend fetch <url>` or `ampersend fetch --inspect <url>` (no charge).
-3. **From this package:** `getPaidFetch()` from `@ampersend/hermes` — it uses `createAmpersendHttpClient` + `wrapFetchWithPayment` (same as the CLI).
+1. **CLI (preferred):** `ampersend fetch <url>` or `ampersend fetch --inspect <url>` (no charge).
+2. **From this package:** `getPaidFetch()` from `@ampersend/hermes` — it uses `createAmpersendHttpClient` + `wrapFetchWithPayment` (same as the CLI).
 
 Example (after `pnpm build`, with `.env` loaded):
 
@@ -43,7 +41,6 @@ Always check payment requirements before authorizing a payment:
 
 - CLI commands return JSON. Check `ok` first — treat the call as successful only when `ok` is `true`.
 - On failure, surface `error.code` and `error.message` to the user. Do not silently swallow payment errors.
-- MCP tool calls to `paid_fetch` return JSON with `ok`, `status`, `headers`, and `body`. Check `ok` and `status` to determine success.
 
 ## Red lines
 
@@ -56,17 +53,11 @@ Always check payment requirements before authorizing a payment:
 
 If `BOOTSTRAP.md` exists in this directory, follow it step by step, then delete it when finished.
 
-## MCP tools
-
-After setup, Hermes has one ampersend MCP tool: `paid_fetch`. Call it with a URL to fetch any x402-protected endpoint. The tool handles 402 negotiation, payment authorization, and retry automatically. It accepts `url` (required), `method`, `headers`, and `body` parameters and returns the response status, headers, and body as JSON.
-
-Run `/reload-mcp` in Hermes after any config changes.
-
 ## Session startup checklist
 
 1. Check if ampersend is configured: `ampersend config status`
 2. If not configured, follow `BOOTSTRAP.md` or prompt the user to run `pnpm setup`
-3. Verify `paid_fetch` tool is available in Hermes
+3. Verify the CLI is working: `ampersend fetch --inspect <any-url>`
 
 ## Make it yours
 

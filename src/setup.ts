@@ -1,27 +1,20 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { execSync, spawn } from "node:child_process";
+import { execSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { bootstrapStart, bootstrapFinish, parseDotEnv } from "./bootstrap.js";
-import { patchHermesConfig } from "./mcp/hermes-config.js";
 import { resolveDotEnvPath } from "./dotenv-path.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const packageRoot = path.resolve(__dirname, "..");
 
 function usage(): never {
   process.stderr.write(`
 Usage: pnpm setup [options]
 
-All-in-one: bootstrap agent → build → verify MCP tool → patch Hermes config.
-After this, switch to Hermes and run /reload-mcp.
+Bootstrap an ampersend agent wallet and verify the CLI is ready.
+After this, Hermes/OpenClaw agents use the \`ampersend\` CLI directly.
 
 Options:
   --name            Agent name (required for first-time setup)
   --network         Network: base (default) or base-sepolia
-  --hermes-dir      Hermes config directory (default: ~/.hermes)
   --env-path        Path to .env file
   --api-url         API URL override
   --daily-limit     Daily spending limit in atomic units
@@ -33,83 +26,19 @@ Options:
 Flow:
   1. Reads AMPERSEND_AGENT_KEY + AMPERSEND_AGENT_ACCOUNT from .env
      (runs bootstrap start/finish if missing)
-  2. Builds the package (pnpm build)
-  3. Verifies the paid_fetch MCP tool starts correctly
-  4. Patches ~/.hermes/config.yaml → mcp_servers.ampersend (stdio MCP tool)
-
-Switch back to Hermes and run /reload-mcp. Done.
+  2. Verifies the ampersend CLI is installed (>= 0.0.22)
+  3. Prints next steps for Hermes/OpenClaw usage
 `);
   process.exit(0);
 }
 
-function smokeTestMcpShim(envVars: Record<string, string>): Promise<void> {
-  const shimPath = path.resolve(packageRoot, "dist/mcp/fetch-server.js");
-  if (!fs.existsSync(shimPath)) {
-    return Promise.reject(
-      new Error(`MCP shim not found at ${shimPath}. Build may have failed.`),
-    );
+function checkCliInstalled(): { installed: boolean; version?: string } {
+  try {
+    const out = execSync("ampersend --version", { stdio: "pipe" }).toString().trim();
+    return { installed: true, version: out };
+  } catch {
+    return { installed: false };
   }
-
-  const initMsg = JSON.stringify({
-    jsonrpc: "2.0",
-    id: 1,
-    method: "initialize",
-    params: {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: "smoke-test", version: "0.0.1" },
-    },
-  });
-  const notifyMsg = JSON.stringify({
-    jsonrpc: "2.0",
-    method: "notifications/initialized",
-  });
-  const listMsg = JSON.stringify({
-    jsonrpc: "2.0",
-    id: 2,
-    method: "tools/list",
-  });
-
-  const input = `${initMsg}\n${notifyMsg}\n${listMsg}\n`;
-
-  const child = spawn(process.execPath, [shimPath], {
-    env: { ...process.env, ...envVars },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-  child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-
-  child.stdin.write(input);
-  child.stdin.end();
-
-  const killTimer = setTimeout(() => {
-    child.kill("SIGTERM");
-  }, 10_000);
-
-  return new Promise<void>((resolve, reject) => {
-    child.on("close", (code) => {
-      clearTimeout(killTimer);
-      if (stdout.includes('"paid_fetch"')) {
-        resolve();
-      } else {
-        reject(
-          new Error(
-            `MCP shim smoke test failed (exit ${code}).\n` +
-              `Expected "paid_fetch" in tools/list response.\n` +
-              `stdout: ${stdout.slice(0, 500)}\n` +
-              `stderr: ${stderr.slice(0, 500)}`,
-          ),
-        );
-      }
-    });
-    child.on("error", (err) => {
-      clearTimeout(killTimer);
-      reject(new Error(`Failed to spawn MCP shim: ${err.message}`));
-    });
-  });
 }
 
 async function main(): Promise<void> {
@@ -118,7 +47,6 @@ async function main(): Promise<void> {
     options: {
       name: { type: "string" },
       network: { type: "string" },
-      "hermes-dir": { type: "string" },
       "env-path": { type: "string" },
       "api-url": { type: "string" },
       "daily-limit": { type: "string" },
@@ -132,7 +60,6 @@ async function main(): Promise<void> {
 
   if (values.help) usage();
 
-  const hermesDir = values["hermes-dir"] ?? "~/.hermes";
   const envPath = values["env-path"] ?? resolveDotEnvPath({});
   const apiUrl = values["api-url"];
 
@@ -184,51 +111,59 @@ async function main(): Promise<void> {
     });
 
     process.stderr.write("[ampersend-hermes] Bootstrap complete.\n\n");
+  } else {
+    process.stderr.write("[ampersend-hermes] Credentials found in .env.\n");
   }
 
-  // Reload config from .env after bootstrap
-  const raw = await fs.promises.readFile(envPath, "utf-8");
-  const parsed = parseDotEnv(raw);
-
-  if (parsed.AMPERSEND_AGENT_KEY)
-    process.env.AMPERSEND_AGENT_KEY = parsed.AMPERSEND_AGENT_KEY;
-  if (parsed.AMPERSEND_AGENT_ACCOUNT)
-    process.env.AMPERSEND_AGENT_ACCOUNT = parsed.AMPERSEND_AGENT_ACCOUNT;
-  if (parsed.AMPERSEND_API_URL)
-    process.env.AMPERSEND_API_URL = parsed.AMPERSEND_API_URL;
-  if (values.network) process.env.AMPERSEND_NETWORK = values.network;
-
-  // Step 2: Build to ensure dist/mcp/fetch-server.js exists
-  process.stderr.write("[ampersend-hermes] Building package...\n");
-  try {
-    execSync("pnpm build", { cwd: packageRoot, stdio: "pipe" });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    process.stderr.write(`[ampersend-hermes] Build failed: ${msg}\n`);
-    process.exit(1);
+  // Step 2: Check CLI
+  process.stderr.write("[ampersend-hermes] Checking ampersend CLI...\n");
+  const cli = checkCliInstalled();
+  if (cli.installed) {
+    process.stderr.write(
+      `[ampersend-hermes] ampersend CLI found: ${cli.version}\n`,
+    );
+  } else {
+    process.stderr.write(
+      "[ampersend-hermes] ampersend CLI not found. Install it:\n" +
+        "  npm install -g @ampersend_ai/ampersend-sdk@latest --force\n\n",
+    );
   }
-  process.stderr.write("[ampersend-hermes] Build complete.\n");
 
-  // Step 3: Smoke-test the MCP shim
-  process.stderr.write("[ampersend-hermes] Verifying paid_fetch MCP tool...\n");
-  const shimEnv: Record<string, string> = {
-    AMPERSEND_AGENT_KEY: parsed.AMPERSEND_AGENT_KEY ?? "",
-    AMPERSEND_AGENT_ACCOUNT: parsed.AMPERSEND_AGENT_ACCOUNT ?? "",
-    AMPERSEND_API_URL: parsed.AMPERSEND_API_URL ?? "https://api.ampersend.ai",
-    AMPERSEND_NETWORK: values.network ?? parsed.AMPERSEND_NETWORK ?? "base",
-  };
-  await smokeTestMcpShim(shimEnv);
-  process.stderr.write("[ampersend-hermes] paid_fetch tool verified.\n");
+  // Step 3: Verify config
+  if (cli.installed) {
+    try {
+      const status = execSync("ampersend config status", {
+        stdio: "pipe",
+      }).toString();
+      if (status.includes('"status"') && status.includes('"ready"')) {
+        process.stderr.write("[ampersend-hermes] Agent status: ready\n");
+      } else {
+        process.stderr.write(
+          `[ampersend-hermes] Agent config status:\n${status}\n`,
+        );
+      }
+    } catch {
+      process.stderr.write(
+        "[ampersend-hermes] Could not check agent status (CLI may need configuration).\n",
+      );
+    }
+  }
 
-  // Step 4: Patch Hermes config
-  process.stderr.write("[ampersend-hermes] Patching Hermes MCP config...\n");
-  await patchHermesConfig(hermesDir);
-  process.stderr.write(
-    "[ampersend-hermes] Hermes config patched → mcp_servers.ampersend\n",
-  );
-  process.stderr.write(
-    "\n[ampersend-hermes] Done. Switch to Hermes and run /reload-mcp.\n",
-  );
+  // Print next steps
+  process.stderr.write(`
+[ampersend-hermes] Setup complete. Next steps:
+
+  For Hermes / OpenClaw agents:
+    Use the ampersend CLI directly from the agent's terminal:
+      ampersend fetch --inspect <url>    # check cost (no charge)
+      ampersend fetch <url>              # fetch and pay x402
+
+  For programmatic Node.js usage:
+    import { getPaidFetch } from "@ampersend/hermes";
+    const res = await getPaidFetch()("https://example.com/x402-endpoint");
+
+  Canonical skill reference: https://www.ampersend.ai/skill.md
+`);
 }
 
 main().catch((err: unknown) => {

@@ -1,35 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { config, requireAgentKey, requireAgentAccount } from "../config.js";
-
-/** Hermes `mcp_servers` key; tools appear as `mcp_ampersend_*`. */
-export const HERMES_AMPERSEND_SERVER_KEY = "ampersend";
-
-/**
- * Stdio entry: launches the in-repo `paid_fetch` MCP server directly via node.
- * The server exposes a single `paid_fetch` tool backed by `getPaidFetch()`.
- */
-export function buildHermesStdioMcpEntry(): Record<string, unknown> {
-  const packageRoot = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../..",
-  );
-  return {
-    command: process.execPath,
-    args: [path.resolve(packageRoot, "dist/mcp/fetch-server.js")],
-    env: {
-      AMPERSEND_AGENT_KEY: requireAgentKey(),
-      AMPERSEND_AGENT_ACCOUNT: requireAgentAccount(),
-      AMPERSEND_API_URL: config.ampersendApiUrl,
-      AMPERSEND_NETWORK: config.ampersendNetwork,
-    },
-    timeout: 120,
-    connect_timeout: 60,
-  };
-}
 
 async function atomicWrite(filePath: string, content: string): Promise<void> {
   const tmpPath = `${filePath}.tmp`;
@@ -49,89 +21,6 @@ function resolveHermesDir(configDir: string): string {
     return path.join(os.homedir(), configDir.slice(2));
   }
   return path.resolve(configDir);
-}
-
-async function patchYaml(
-  yamlPath: string,
-  entry: Record<string, unknown>,
-): Promise<void> {
-  let doc: Record<string, unknown> = {};
-  if (fs.existsSync(yamlPath)) {
-    const raw = await fs.promises.readFile(yamlPath, "utf-8");
-    const parsed = parseYaml(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      doc = parsed as Record<string, unknown>;
-    }
-  }
-
-  const mcpServers =
-    (doc.mcp_servers as Record<string, unknown> | undefined) ?? {};
-  doc.mcp_servers = {
-    ...mcpServers,
-    [HERMES_AMPERSEND_SERVER_KEY]: entry,
-  };
-
-  const out = stringifyYaml(doc, { lineWidth: 100 });
-  await atomicWrite(yamlPath, out.endsWith("\n") ? out : `${out}\n`);
-}
-
-async function patchJson(
-  jsonPath: string,
-  entry: Record<string, unknown>,
-): Promise<void> {
-  let existing: Record<string, unknown> = {};
-  try {
-    const raw = await fs.promises.readFile(jsonPath, "utf-8");
-    existing = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    existing = {};
-  }
-
-  const mcpServers =
-    (existing.mcpServers as Record<string, unknown> | undefined) ?? {};
-  const merged = {
-    ...existing,
-    mcpServers: {
-      ...mcpServers,
-      [HERMES_AMPERSEND_SERVER_KEY]: entry,
-    },
-  };
-
-  await atomicWrite(jsonPath, JSON.stringify(merged, null, 2));
-}
-
-/**
- * Merge ampersend MCP into Hermes config. Prefers `~/.hermes/config.yaml`;
- * falls back to `config.json` if only that exists.
- *
- * Writes a stdio MCP server entry that runs the in-repo `paid_fetch` tool
- * directly via node. Agent credentials are passed in the `env` block.
- */
-export async function patchHermesConfig(
-  configDir: string,
-): Promise<void> {
-  const resolved = resolveHermesDir(configDir);
-
-  await fs.promises.mkdir(resolved, { recursive: true });
-
-  const yamlPath = path.join(resolved, "config.yaml");
-  const jsonPath = path.join(resolved, "config.json");
-
-  const entry = buildHermesStdioMcpEntry();
-
-  if (fs.existsSync(yamlPath)) {
-    await backupFile(yamlPath);
-    await patchYaml(yamlPath, entry);
-    return;
-  }
-
-  if (fs.existsSync(jsonPath)) {
-    await backupFile(jsonPath);
-    await patchJson(jsonPath, entry);
-    return;
-  }
-
-  await patchYaml(yamlPath, entry);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,19 +1,19 @@
 ---
 name: ampersend
-description: ampersend CLI and MCP tool for agent payments via x402
+description: ampersend CLI for agent payments via x402
 metadata: { "openclaw": { "requires": { "bins": ["ampersend"] } } }
 ---
 
-# ampersend — CLI + MCP skill for Hermes
+# ampersend — CLI skill for Hermes
 
 ampersend enables autonomous agent payments. Agents can make payments within user-defined spending limits without requiring human approval for each transaction. Payments use stablecoins (USDC) on Base mainnet via the x402 protocol.
 
-This skill requires `ampersend` v0.0.16. Run `ampersend --version` to check your installed version.
+This skill requires `ampersend` >= v0.0.22. Run `ampersend --version` to check your installed version.
 
 ## Installation
 
 ```bash
-npm install -g @ampersend_ai/ampersend-sdk@0.0.16
+npm install -g @ampersend_ai/ampersend-sdk@latest --force
 ```
 
 ## Security
@@ -51,8 +51,7 @@ ampersend setup start --name "my-hermes-agent" --daily-limit "1000000" --auto-to
 If you already have an agent key and account address:
 
 ```bash
-ampersend config set "0xagentKey:::0xagentAccount"
-# {"ok": true, "data": {"agentKeyAddress": "0x...", "agentAccount": "0x...", "status": "ready"}}
+ampersend config set <key:::account>       # Set active config manually
 ```
 
 ## TypeScript (`@ampersend/hermes`)
@@ -67,52 +66,6 @@ import { getPaidFetch } from "@ampersend/hermes";
 
 const fetchPaid = getPaidFetch();
 const res = await fetchPaid("https://example.com/paid-endpoint");
-```
-
-## MCP tool (Hermes)
-
-After setup, the ampersend MCP server is registered under `mcp_servers.ampersend` in Hermes config. It exposes a single tool:
-
-### `paid_fetch`
-
-Fetch any HTTPS URL with automatic x402 payment handling.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `url` | string (URL) | Yes | The URL to fetch |
-| `method` | string | No | HTTP method: GET (default), POST, PUT, DELETE, PATCH |
-| `headers` | object | No | Request headers as key-value pairs |
-| `body` | string | No | Request body |
-
-**Returns** JSON with:
-
-| Field | Description |
-| --- | --- |
-| `ok` | Boolean — true if status is 2xx |
-| `status` | HTTP status code |
-| `statusText` | HTTP status text |
-| `headers` | Response headers as key-value pairs |
-| `body` | Response body (truncated to 256 KB) |
-| `bodyBytes` | Total body size in bytes |
-| `truncated` | Boolean — true if body was truncated |
-
-**How it works:**
-
-1. Agent calls `paid_fetch` with a URL
-2. The tool fetches the URL via `getPaidFetch()`
-3. If the server returns 402, the SDK authorizes payment via the ampersend API (within spend limits)
-4. The SDK signs the payment and retries with the payment proof
-5. The tool returns the final response to the agent
-
-Tools appear in Hermes as `mcp_ampersend_*`. Run `/reload-mcp` in Hermes after config changes.
-
-### Patch Hermes config programmatically
-
-```typescript
-import { patchHermesConfig } from "@ampersend/hermes";
-await patchHermesConfig("~/.hermes");
 ```
 
 ## CLI commands
